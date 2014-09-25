@@ -10,8 +10,7 @@
 
 using namespace std;
 
-void handleStart(int servSock, struct sockaddr_in clientAddr, 
-        unsigned int clientLen, string sessionName, 
+int handleStart(string sessionName, 
         std::map<string, unsigned short> &chatSessions);
 bool checkName(string sessionName, std::map<string, unsigned short> chatSessions);
 
@@ -28,6 +27,8 @@ int main(int argc, char *argv[])
     int recvMsgSize;                      /* Size of received message */
     std::map<string, unsigned short> chatSessions;
     char sessionName[8];
+    int res;
+    char resultString[33];
 
     /* Create socket for incoming connections */
     if ((servSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
@@ -36,12 +37,12 @@ int main(int argc, char *argv[])
     }
       
     /* Construct local address structure */
-    memset((char*)&controllerAddr, 0, sizeof(controllerAddr));
+    controllerLen = sizeof(controllerAddr);
+    memset((char*)&controllerAddr, 0, controllerLen);
     controllerAddr.sin_family = AF_INET;                  /* Inet addr family */
     controllerAddr.sin_addr.s_addr = htonl(INADDR_ANY);   /* Any inc interface */
     controllerAddr.sin_port = htons(controllerPort);      /* Local port */
 
-    controllerLen = sizeof(controllerAddr);
     /* Bind to the local address */
     if (bind(servSock, 
              (struct sockaddr *) &controllerAddr, controllerLen) < 0){
@@ -80,7 +81,7 @@ int main(int argc, char *argv[])
         if(strncmp("Start", recvBuffer, 5) == 0){
             printf("Start received\n");
             strcpy(sessionName, &recvBuffer[6]);
-            handleStart(servSock, clientAddr, clientLen, sessionName,chatSessions);
+            res = handleStart(sessionName,chatSessions);
         }
         else if(strncmp("Find", recvBuffer, 4) == 0){
             printf("Find received\n");
@@ -90,8 +91,17 @@ int main(int argc, char *argv[])
         }
         else{
             printf("Invalid command\n");
+            res = -1;
         }
         
+        /* Send result of operation to client */
+        sprintf(resultString,"%d",res);
+        if(sendto(servSock, resultString, strlen(resultString), 0, 
+                (struct sockaddr *)&clientAddr, clientLen)<0){
+            perror("sendto() failed");
+            return 1;
+        }
+
     }
     /* NOT REACHED */
 }
@@ -100,24 +110,56 @@ bool nameExists(string sessionName, std::map<string, unsigned short> chatSession
     std::map<string,unsigned short>::iterator it = chatSessions.find(sessionName);
     return it != chatSessions.end();
 }
-void handleStart(int servSock, struct sockaddr_in clientAddr, unsigned int clientLen,
-        string sessionName, std::map<string, unsigned short> &chatSessions){
+int handleStart(string sessionName, 
+    std::map<string, unsigned short> &chatSessions){
 
-    const char failure[4] = "-1\0";
+    int servSock;                    /* Socket descriptor for server */
+    struct sockaddr_in servAddr;     /* Local address */
+    socklen_t servLen = sizeof(servAddr); /* Len of serv address data structure */
+    unsigned short servPort = 0;     /* Any port */
 
+
+    /* Check to see if session name is valid */
     printf("%s\n", sessionName.c_str());
-    if(nameExists(sessionName, chatSessions)){
-        if(sendto(servSock, failure, 4, 0, 
-            (struct sockaddr *)&clientAddr, clientLen)<0){
-            perror("sendto()");
-        }
-        return;
+    if(sessionName.empty() || nameExists(sessionName, chatSessions)){
+        return -1;
     }
-    //probably should move communication stuff to outside, return value
-    //create chat session
-    //create tcp socket
-    // chatSessions[sessionName]
 
+    /* Create tcp socket for incoming connections */
+    if ((servSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0){
+        printf("socket() failed");
+        return 1;
+    }
+
+    memset((char*)&servAddr, 0, servLen);
+    servAddr.sin_family = AF_INET;                /* Internet address family */
+    servAddr.sin_addr.s_addr = htonl(INADDR_ANY); /* Any incoming interface */
+    servAddr.sin_port = htons(servPort);                 /* Any port */
+
+        /* Bind to the local address */
+    if (bind(servSock, (struct sockaddr *) &servAddr, servLen) < 0){
+        perror("bind() failed");
+        return -1;
+    }
+        /* Mark the socket so it will listen for incoming connections */
+    if (listen(servSock, 5) < 0){
+        perror("listen() failed");
+        return -1;
+    }
+
+    /* Print the port to stdout */
+    if (getsockname(servSock, 
+                    (struct sockaddr *)&servAddr, &servLen) < 0){
+        perror("getsockname() failed");
+        return -1;
+    }
+    servPort = servAddr.sin_port;
+
+    //create chat session
+     //exec sessionServer
+
+    chatSessions[sessionName.c_str()] = servPort;
+    return servPort;
 }
 
 //nc -4u -w1 localhost <port> (test udp socket)
