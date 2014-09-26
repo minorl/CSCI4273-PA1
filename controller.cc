@@ -4,15 +4,27 @@
 #include <sys/types.h>
 #include <string>
 #include <unistd.h>
+#include <signal.h>
 #include <map>
 
 #define MAX_NAME_LEN 8
 
 using namespace std;
+struct sessionInfo
+{
+    unsigned short port;
+    pid_t sessionPid;
+    int sock_fd;
+    
+};
 
 int handleStart(string sessionName, 
-        std::map<string, unsigned short> &chatSessions);
-bool checkName(string sessionName, std::map<string, unsigned short> chatSessions);
+        std::map<string, struct sessionInfo> &chatSessions);
+int handleFind(string sessionName, 
+        std::map<string, struct sessionInfo> chatSessions);
+int handleTerm(string sessionName, 
+        std::map<string, struct sessionInfo> &chatSessions);
+bool checkName(string sessionName, std::map<string, struct sessionInfo> chatSessions);
 
 int main(int argc, char *argv[])
 {
@@ -25,7 +37,7 @@ int main(int argc, char *argv[])
     size_t recvBufLen = 16;
     char recvBuffer[recvBufLen];          /* Buffer for command string */
     int recvMsgSize;                      /* Size of received message */
-    std::map<string, unsigned short> chatSessions;
+    std::map<string, struct sessionInfo> chatSessions;
     char sessionName[8];
     int res;
     char resultString[33];
@@ -71,6 +83,7 @@ int main(int argc, char *argv[])
             perror("recvfrom() failed");
             return 1;
         }
+
         /* If you like it, you should put a terminator on it */
         if(recvMsgSize > 0)
             recvBuffer[recvMsgSize] = '\0';
@@ -85,9 +98,13 @@ int main(int argc, char *argv[])
         }
         else if(strncmp("Find", recvBuffer, 4) == 0){
             printf("Find received\n");
+            strcpy(sessionName, &recvBuffer[5]);
+            res = handleFind(sessionName,chatSessions);
         }
         else if(strncmp("Terminate", recvBuffer, 9) == 0){
             printf("Terminate received\n");
+            strcpy(sessionName, &recvBuffer[10]);
+            res = handleTerm(sessionName,chatSessions);
         }
         else{
             printf("Invalid command\n");
@@ -96,6 +113,8 @@ int main(int argc, char *argv[])
         
         /* Send result of operation to client */
         sprintf(resultString,"%d",res);
+        printf("result %s\n", resultString);
+
         if(sendto(servSock, resultString, strlen(resultString), 0, 
                 (struct sockaddr *)&clientAddr, clientLen)<0){
             perror("sendto() failed");
@@ -105,19 +124,20 @@ int main(int argc, char *argv[])
     }
     /* NOT REACHED */
 }
-bool nameExists(string sessionName, std::map<string, unsigned short> chatSessions){
+bool nameExists(string sessionName, std::map<string, struct sessionInfo> chatSessions){
     //Returns true if session by that name exists
-    std::map<string,unsigned short>::iterator it = chatSessions.find(sessionName);
+    std::map<string,struct sessionInfo>::iterator it = chatSessions.find(sessionName);
     return it != chatSessions.end();
 }
 int handleStart(string sessionName, 
-    std::map<string, unsigned short> &chatSessions){
+    std::map<string, struct sessionInfo> &chatSessions){
 
     int servSock;                    /* Socket descriptor for server */
     struct sockaddr_in servAddr;     /* Local address */
     socklen_t servLen = sizeof(servAddr); /* Len of serv address data structure */
     unsigned short servPort = 0;     /* Any port */
-
+    struct sessionInfo s;           /* Store info of session server */
+    pid_t ppid = 0;
 
     /* Check to see if session name is valid */
     printf("%s\n", sessionName.c_str());
@@ -153,13 +173,63 @@ int handleStart(string sessionName,
         perror("getsockname() failed");
         return -1;
     }
-    servPort = servAddr.sin_port;
+    /* This is our new port */
+    s.port = servAddr.sin_port;
+
+    /* Fork for the new session server */
+   if((ppid = fork()) < 0 )
+   {
+      perror("fork failure");
+      return -1;
+   }
 
     //create chat session
      //exec sessionServer
+/* fork() == 0 for child process */
 
-    chatSessions[sessionName.c_str()] = servPort;
-    return servPort;
+   if(ppid == 0){
+    char* args[4] = {"nc", "-l", "31337", NULL} ;
+          execvp(args[0], args);
+   }
+
+
+
+    s.sessionPid = ppid;
+    s.sock_fd = servSock;
+    chatSessions[sessionName.c_str()] = s;
+    return s.port;
+}
+
+int handleFind(string sessionName, 
+    std::map<string, struct sessionInfo> chatSessions){
+    struct sessionInfo s;
+
+    printf("%s\n", sessionName.c_str());
+    if(sessionName.empty() || !nameExists(sessionName, chatSessions)){
+        return -1;
+    }
+    s = chatSessions[sessionName];
+
+    return s.port;
+}
+
+int handleTerm(string sessionName, 
+    std::map<string, struct sessionInfo> &chatSessions){
+    struct sessionInfo s;
+
+    printf("%s\n", sessionName.c_str());
+    if(sessionName.empty() || !nameExists(sessionName, chatSessions)){
+        return -1;
+    }
+
+    s = chatSessions[sessionName];
+    if(kill(s.sessionPid, SIGKILL) < 0){
+        perror("Kill fail");
+        return -1;
+    }
+    chatSessions.erase(sessionName);
+
+    return 0;
 }
 
 //nc -4u -w1 localhost <port> (test udp socket)
