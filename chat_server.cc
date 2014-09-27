@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <map>
+#include <string.h>
 
 #define MAXMSG 128
 
@@ -21,7 +22,6 @@ int main(int argc, char *argv[]){
 
 	if (argc != 2)     /* Test for correct number of arguments */
     {
-    	printf("aww shit");
         fprintf(stderr, "Usage:  %s <Server Sock FD>\n", argv[0]);
         return 1;
     }
@@ -41,10 +41,10 @@ int main(int argc, char *argv[]){
 
   	/* Initialize the set of active sockets. */
 	FD_ZERO (&active_fd_set);
-  	FD_SET (servSock, &active_fd_set);
+  FD_SET (servSock, &active_fd_set);
 
   	printf("BOUT TO LOOP BITCH");
-	while (1){
+	 while (1){
       /* Block until input arrives on one or more active sockets. */
       read_fd_set = active_fd_set;
       if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, NULL) < 0)

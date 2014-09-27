@@ -2,10 +2,12 @@
 #include <sys/socket.h> /* for socket(), bind(), and connect() */
 #include <arpa/inet.h>  /* for sockaddr_in and inet_ntoa() */
 #include <sys/types.h>
-#include <string>
+#include <string.h>
 #include <unistd.h>
 #include <signal.h>
 #include <map>
+#include <string>
+
 
 #define MAX_NAME_LEN 8
 
@@ -169,7 +171,7 @@ int handleStart(string sessionName,
         return -1;
     }
     /* This is our new port */
-    s.port = servAddr.sin_port;
+    s.port = ntohs(servAddr.sin_port);
 
     /* Fork for the new session server */
    if((ppid = fork()) < 0 )
