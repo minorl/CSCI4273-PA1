@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     struct sockaddr_in controllerAddr;    /* Local address */
     struct sockaddr_in clientAddr;        /* Client address */
     unsigned short controllerPort = 0;    /* Server port, 0 for any available */
-    unsigned int clientLen;         /* Len of client address data structure */
+    socklen_t clientLen;         /* Len of client address data structure */
     socklen_t controllerLen;        /* Len of controller address data structure */
     size_t recvBufLen = 16;
     char recvBuffer[recvBufLen];          /* Buffer for command string */
@@ -161,11 +161,6 @@ int handleStart(string sessionName,
         perror("bind() failed");
         return -1;
     }
-        /* Mark the socket so it will listen for incoming connections */
-    if (listen(servSock, 5) < 0){
-        perror("listen() failed");
-        return -1;
-    }
 
     /* Print the port to stdout */
     if (getsockname(servSock, 
@@ -186,13 +181,15 @@ int handleStart(string sessionName,
     //create chat session
      //exec sessionServer
 /* fork() == 0 for child process */
+    char sockfdString[33];
+    sprintf(sockfdString,"%d",servSock);
+    if(ppid == 0){
+        char* args[3] = {"./server", sockfdString, NULL};
+        execvp(args[0], args);
+    }
 
-   if(ppid == 0){
-    char* args[4] = {"nc", "-l", "31337", NULL} ;
-          execvp(args[0], args);
-   }
 
-
+    printf("Server started, pid %d", ppid);
 
     s.sessionPid = ppid;
     s.sock_fd = servSock;
